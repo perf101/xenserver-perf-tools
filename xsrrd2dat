@@ -1,0 +1,46 @@
+#!/bin/sh -e
+
+rrd_dir="$1"
+dat_dir="$2"
+[ -z "${dat_dir}" ] && dat_dir="$1"
+
+rrddump="rrddump"
+
+function die() {
+  echo $1
+  exit $2
+}
+
+rrd_dir_rel="var/xapi/blobs/rrds"
+
+dat_dir=${dat_dir/--help*}
+dat_dir=${dat_dir/-h*}
+: ${dat_dir:?"
+usage: $0 [rrd_dir] <dat_dir>
+where:
+- dat_dir is the location where the .dat files will be written to
+- rrd_dir is the location where the rrd files will be read from
+  if rrd_dir is not provided, it will try the following default locations:
+  #1) xenserver's default location at /${rrd_dir_rel}
+  #2) relative path at ./${rrd_dir_rel}"
+}
+
+[ ! -d "${dat_dir}" ] && die "dat_dir not a directory: ${dat_dir}" 1
+: ${rrd_dir:="/${rrd_dir_rel}"}
+[ ! -d "${rrd_dir}" ] && rrd_dir="${rrd_dir_rel}"
+[ ! -d "${rrd_dir}" ] && die "rrd_dir not a directory: ${rrd_dir}" 2
+
+mkdir -p "${dat_dir}"
+rgzs="$(ls -x ${rrd_dir}/*.gz | grep -v deadbeef | grep -v 00000000)"
+for rgz in ${rgzs}
+do
+  echo "rgz=${rgz}"
+  tmp="$(tempfile)"
+  zcat "${rgz}" > "${tmp}"
+  base=$(basename "${rgz%%.gz}")
+  rgz_dir="${dat_dir}/dat-${base}"
+  echo "${rgz_dir}"
+  mkdir -p "${rgz_dir}"
+  (cd "${rgz_dir}" && "${rrddump}" "${tmp}")
+done
+

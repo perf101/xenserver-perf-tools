@@ -1,0 +1,110 @@
+#!/bin/sh -e
+
+vmtype="$1"
+filters="$2"
+dat_dir="$3"
+gnuplot_dir="$4"
+
+function die() {
+  echo $1
+  exit $2
+}
+
+dat_dir=${dat_dir/--help*}
+dat_dir=${dat_dir/-h*}
+: ${dat_dir:?"
+usage: $0 <vmtype> <filters> <dat_dir> [gnuplot_dir]
+where:
+- vmtype is one of the following values:
+  - dom0: returns only dom0 rrd data
+  - guests: returns only non-dom0 rrd data
+- filters is one or more of the following values:
+  - cpu* : for all cpus
+  - cpuX : for specific cpu X
+  - memory*: for all memory-related data
+  - vbd* : for all vbd-related data
+  - vbd-hdX*: for a specific vbd X data
+  - vbd-hdX-read*: for specific vbd X read data
+  - vbd-hdX-write*: for specific vbd X write data
+  - vif* : for all vif-related data
+  - vif_X* : for specific vif X data
+  - vif_X_rx: for specific vif X rx data
+  - vif_X_tx: for specific vif X tx data
+  You can also use the {} expansion, eg: \"vif_*_{rx,tx}\"
+- dat_dir is the location where the .dat files will be read from
+- gnuplot_dir is the location where the gnuplot files will be written to
+  if gnuplot_dir is not provided, it will use the current directory
+eg.: $0 \"vbd_hd{a,d}_{read,write}\" ."
+}
+
+[ ! -d "${dat_dir}" ] && die "dat_dir not a directory: ${dat_dir}" 1
+: ${gnuplot_dir:="./"}
+[ ! -d "${gnuplot_dir}" ] && die "gnuplot_dir not a directory: ${gnuplot_dir}" 2
+
+vms="${dat_dir}/dat-*"
+dom0vm=""
+guestvms=""
+for vm in ${vms}; do
+  xapi="`eval echo ${vm}/rrd_data_xapi*`"
+  if [ "${xapi:(-3)}" == "dat" ]; then
+    dom0vm="${vm}"
+  else
+    guestvms="${guestvms}${vm} "
+  fi
+done
+if [ "${vmtype}" == "dom0" ]; then
+  rangevms="${dom0vm}"
+else
+  rangevms="${guestvms}"
+fi
+
+function gnuplot() {
+
+  logscale="$1"
+  shift
+  resolution="$1"
+  shift
+  fn="AVERAGE"
+
+  cd "${dat_dir}"
+
+  echo "#!`which gnuplot`
+
+set terminal wxt size 1024,768
+set key font \",6\"
+${logscale}
+set xdata time
+set timefmt \"%s\"
+set format x \"%H:%M\"
+set xlabel \"time (gmt)\"
+set title \""$vmtype" "$@"\"
+"
+  echo -n "plot "
+  for vm in ${rangevms}
+  do
+    for ty in $@; do
+      xtys=`eval echo ${vm}/rrd_data_${ty}_${fn}_$resolution.dat`
+      for xty in ${xtys}; do
+        echo -n "'${xty}' using 1:2 with linespoints, "
+      done
+    done
+  done |sed -e 's/, $//'
+  echo
+  echo "pause -1"
+}
+
+for filter in ${filters}
+do
+  for resolution in {600,7200,604800,31622400}
+  do
+    filename="${vmtype}_rrd_data_${filter/ /_}_$resolution.gnuplot"
+    filename_log="${vmtype}_rrd_data_${filter/ /_}_$resolution.logy.gnuplot"
+    filepath="${gnuplot_dir}/${filename}"
+    filepath_log="${gnuplot_dir}/${filename_log}"
+    (gnuplot "" "${resolution}" `eval echo ${filter}` > "${filepath}")
+    (gnuplot "set logscale y" "${resolution}" `eval echo ${filter}` > "${filepath_log}")
+    echo "${filepath}"
+    echo "${filepath_log}"
+  done
+done
+
