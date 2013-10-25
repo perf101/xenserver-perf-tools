@@ -50,7 +50,7 @@ or
 2. Generate graphs for vifs in guests
 
 ```
-    xsrrd2gnuplot <path_to>/var/xapi/blobs/rrds guests vifs*
+    xsrrd2gnuplot <path_to>/var/xapi/blobs/rrds guests vif*
 ```
 
 3. Generate graphs for cpu usage in host 
